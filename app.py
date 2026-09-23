@@ -4,6 +4,7 @@ import io
 import base64
 import urllib.parse
 from datetime import datetime
+from collections import deque
 from flask import Flask, request, jsonify
 import matplotlib
 matplotlib.use('Agg')
@@ -13,6 +14,38 @@ app = Flask(__name__)
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+# --- Data Structures ---
+
+class Stack:
+    def __init__(self):
+        self._items = []
+
+    def push(self, item):
+        self._items.append(item)
+
+    def pop(self):
+        return self._items.pop()
+
+    def is_empty(self):
+        return len(self._items) == 0
+
+
+class Queue:
+    def __init__(self):
+        self._items = deque()
+
+    def enqueue(self, item):
+        self._items.append(item)
+
+    def dequeue(self):
+        return self._items.popleft()
+
+    def is_empty(self):
+        return len(self._items) == 0
+
+
+# --- Algorithm Implementations ---
 
 def linear_search(arr, target):
     for item in arr:
@@ -82,14 +115,42 @@ def insertion_sort(arr):
         a[j + 1] = key
     return a
 
+def stack_reverse_array(n):
+    s = Stack()
+    for x in range(n):
+        s.push(x)
+    out = []
+    while not s.is_empty():
+        out.append(s.pop())
+    return out
+
+def queue_reverse_with_stack(n):
+    q = Queue()
+    s = Stack()
+    for i in range(n):
+        q.enqueue(i)
+    while not q.is_empty():
+        s.push(q.dequeue())
+    while not s.is_empty():
+        q.enqueue(s.pop())
+    return q
+
+
+# --- Algorithm Registry ---
+
 ALGORITHM_REGISTRY = {
     "linear_search": "O(n)",
     "binary_search": "O(log n)",
     "bubble_sort": "O(n^2)",
     "nested_loops": "O(n^2)",
     "merge_sort": "O(n log n)",
-    "insertion_sort": "O(n^2)"
+    "insertion_sort": "O(n^2)",
+    "stack_reverse": "O(n)",
+    "queue_reverse": "O(n)"
 }
+
+
+# --- Benchmarking ---
 
 def benchmark_algorithm(algo_name, n):
     target = -1
@@ -122,7 +183,18 @@ def benchmark_algorithm(algo_name, n):
         start = time.perf_counter()
         insertion_sort(arr)
         return time.perf_counter() - start
+    elif algo_name == "stack_reverse":
+        start = time.perf_counter()
+        stack_reverse_array(n)
+        return time.perf_counter() - start
+    elif algo_name == "queue_reverse":
+        start = time.perf_counter()
+        queue_reverse_with_stack(n)
+        return time.perf_counter() - start
     return 0.0
+
+
+# --- Routes ---
 
 @app.route('/analyze', methods=['GET'])
 def analyze():
