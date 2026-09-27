@@ -1,49 +1,32 @@
 ﻿import os
 import time
 import io
+import json
 import base64
 import urllib.parse
 from datetime import datetime
-from collections import deque
 from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
+from database import db, Analysis
+from stack import Stack
+from queue_ds import Queue
 
 app = Flask(__name__)
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
-# --- Data Structures ---
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///analysis.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-class Stack:
-    def __init__(self):
-        self._items = []
+db.init_app(app)
 
-    def push(self, item):
-        self._items.append(item)
-
-    def pop(self):
-        return self._items.pop()
-
-    def is_empty(self):
-        return len(self._items) == 0
-
-
-class Queue:
-    def __init__(self):
-        self._items = deque()
-
-    def enqueue(self, item):
-        self._items.append(item)
-
-    def dequeue(self):
-        return self._items.popleft()
-
-    def is_empty(self):
-        return len(self._items) == 0
-
+with app.app_context():
+    db.create_all()
 
 # --- Algorithm Implementations ---
 
@@ -135,7 +118,6 @@ def queue_reverse_with_stack(n):
         q.enqueue(s.pop())
     return q
 
-
 # --- Algorithm Registry ---
 
 ALGORITHM_REGISTRY = {
@@ -148,7 +130,6 @@ ALGORITHM_REGISTRY = {
     "stack_reverse": "O(n)",
     "queue_reverse": "O(n)"
 }
-
 
 # --- Benchmarking ---
 
@@ -192,7 +173,6 @@ def benchmark_algorithm(algo_name, n):
         queue_reverse_with_stack(n)
         return time.perf_counter() - start
     return 0.0
-
 
 # --- Routes ---
 
@@ -271,6 +251,43 @@ def analyze():
         "data_points": [{"n": n, "time_seconds": t} for n, t in zip(n_values, timings)],
         "image_base64": b64_image
     }), 200
+
+@app.route('/save_analysis', methods=['POST'])
+def save_analysis():
+    payload = request.get_json()
+
+    if not payload:
+        return jsonify({"status": "error", "message": "No JSON payload provided"}), 400
+
+    algo_name = payload.get('algorithm') or payload.get('algorithm_name')
+    theoretical = payload.get('theoretical_complexity')
+    n_max = payload.get('n_max')
+    step = payload.get('step')
+    snapshot_path = payload.get('local_snapshot_path')
+
+    record = Analysis(
+        algorithm_name=algo_name,
+        theoretical_complexity=theoretical,
+        n_max=n_max,
+        step=step,
+        local_snapshot_path=snapshot_path,
+        timestamp=datetime.utcnow(),
+        data=json.dumps(payload)
+    )
+
+    db.session.add(record)
+    db.session.commit()
+
+    return jsonify({
+        "status": "success",
+        "message": "Analysis saved to database successfully",
+        "record_id": record.id
+    }), 201
+
+@app.route('/get_analyses', methods=['GET'])
+def get_analyses():
+    records = Analysis.query.order_by(Analysis.timestamp.desc()).all()
+    return jsonify([record.to_dict() for record in records]), 200
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8000, debug=False)
